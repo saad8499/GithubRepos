@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.support.design.widget.Snackbar;
 import android.support.v4.app.Fragment;
 import android.support.v7.widget.LinearLayoutManager;
@@ -18,8 +19,13 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
+
 
 import app.saad.com.saadmoviedb.DetailActivity;
 import app.saad.com.saadmoviedb.R;
@@ -29,24 +35,29 @@ import app.saad.com.saadmoviedb.item.MovieList;
 import app.saad.com.saadmoviedb.utils.ApiService;
 import app.saad.com.saadmoviedb.utils.CustomItemClickListener;
 import app.saad.com.saadmoviedb.utils.EndlessScrollListener;
+import butterknife.BindView;
+import butterknife.ButterKnife;
+import io.reactivex.Observable;
+import io.reactivex.ObservableSource;
+import io.reactivex.android.schedulers.AndroidSchedulers;
+import io.reactivex.disposables.CompositeDisposable;
+import io.reactivex.observers.DisposableObserver;
+import io.reactivex.schedulers.Schedulers;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
-public class MovieFragment extends Fragment implements RecyclerView.OnItemTouchListener {
+public class MovieFragment extends Fragment implements MovieFragmentView, CustomItemClickListener{
 
     private static final String TAG = Application.class.getSimpleName();
 
-    private static final String ARG_PARAM1 = "param1";
-    private static final String ARG_PARAM2 = "param2";
-
-
-    private RecyclerView mRecyclerView;
+    @BindView(R.id.my_recycler_view) RecyclerView mRecyclerView;
+    @BindView(R.id.edit_text) EditText mEditText;
+    @BindView(R.id.button_submit) Button mButtonSubmit;
     private RecyclerView.Adapter mAdapter;
     private RecyclerView.LayoutManager mLayoutManager;
-    LinearLayoutManager linearLayoutManager;
-    private EditText mEditText;
-    private Button mButtonSubmit;
+    private LinearLayoutManager linearLayoutManager;
+
     private List<Item> myDataset;
     private InputMethodManager inputManager;
     private String query;
@@ -54,12 +65,13 @@ public class MovieFragment extends Fragment implements RecyclerView.OnItemTouchL
     int totalPage;
     private EndlessScrollListener scrollListener;
 
+    Presenter presenter;
+
     private OnFragmentInteractionListener mListener;
 
     public MovieFragment() {
         // Required empty public constructor
     }
-
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -72,16 +84,17 @@ public class MovieFragment extends Fragment implements RecyclerView.OnItemTouchL
                              Bundle savedInstanceState) {
         // Inflate the layout for this fragment
         View v = inflater.inflate(R.layout.fragment_photos, container, false);
-        mRecyclerView = (RecyclerView)v.findViewById(R.id.my_recycler_view);
 
+        ButterKnife.bind(this, v);
         inputManager = (InputMethodManager)
                 getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
+
+        presenter = new PresenterImpl(this);
+
 
         mLayoutManager = new LinearLayoutManager(getActivity());
         linearLayoutManager = new LinearLayoutManager(getActivity());
         mRecyclerView.setLayoutManager(linearLayoutManager);
-        mEditText = (EditText)v.findViewById(R.id.edit_text);
-        mButtonSubmit = (Button)v.findViewById(R.id.button_submit);
         myDataset = new ArrayList<>();
         mButtonSubmit.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -90,47 +103,12 @@ public class MovieFragment extends Fragment implements RecyclerView.OnItemTouchL
                     inputManager.hideSoftInputFromWindow(getActivity().getCurrentFocus().getWindowToken(),
                             InputMethodManager.HIDE_NOT_ALWAYS);
                 }
-                page = 1;
+
                 if(!mEditText.getText().toString().equals(null) && !mEditText.getText().toString().equals("")) {
                     query = mEditText.getText().toString();
                     myDataset.clear();
                     scrollListener.resetState();
-
-                ApiService.Factory.getInstance().getImages(query, page).enqueue(new Callback<MovieList>() {
-
-                    @Override
-                    public void onResponse(Call<MovieList> call, Response<MovieList> response) {
-
-
-                        for (int i = 0; i < response.body().getResults().size();i++){
-                            Log.d(TAG, response.body().getResults().get(i).getId().toString());
-                            Item item = new Item();
-                            item.setTitle(response.body().getResults().get(i).getTitle());
-                            item.setRelease_date(response.body().getResults().get(i).getReleaseDate());
-                            item.setPoster_path(response.body().getResults().get(i).getPosterPath());
-                            item.setOverview(response.body().getResults().get(i).getOverview());
-                            item.setVote_average(response.body().getResults().get(i).getVoteAverage());
-                            item.setVoteCount(String.valueOf(response.body().getResults().get(i).getVoteCount()));
-                            item.setLang(response.body().getResults().get(i).getOriginalLanguage());
-                            myDataset.add(item);
-//                            if(response.body().)
-                    }
-
-                        page = response.body().getPage();
-                        totalPage = response.body().getTotalPages();
-
-                    mAdapter.notifyDataSetChanged();
-
-
-
-            }
-
-            @Override
-            public void onFailure(Call<MovieList> call, Throwable t) {
-                t.printStackTrace();
-            }
-        });
-
+                    presenter.getListView(query);
                 }else{
                     myDataset.clear();
                     mAdapter.notifyDataSetChanged();
@@ -141,78 +119,18 @@ public class MovieFragment extends Fragment implements RecyclerView.OnItemTouchL
         scrollListener = new EndlessScrollListener(linearLayoutManager) {
             @Override
             public void onLoadMore(int Whichpage, int totalItemsCount, RecyclerView view) {
-                // Triggered only when new data needs to be appended to the list
-                // Add whatever code is needed to append new items to the bottom of the list
-//                loadNextDataFromApi(page);
-                if(page < totalPage ) {
-                    page = page + 1;
-                    ApiService.Factory.getInstance().getImages(query, page).enqueue(new Callback<MovieList>() {
+//                if (page < totalPage) {
+                    page = Whichpage + 1;
 
-                        @Override
-                        public void onResponse(Call<MovieList> call, Response<MovieList> response) {
-
-
-                            Log.d(TAG, response.raw().toString()+"page:"+page +"totalPage:"+ response.body().getResults().get(0).getOriginalLanguage());
-                            for (int i = 0; i < response.body().getResults().size(); i++) {
-                                Log.d(TAG, response.body().getResults().get(i).getId().toString());
-                                Item item = new Item();
-                                item.setTitle(response.body().getResults().get(i).getTitle());
-                                item.setRelease_date(response.body().getResults().get(i).getReleaseDate());
-                                item.setPoster_path(response.body().getResults().get(i).getPosterPath());
-                                item.setVote_average(response.body().getResults().get(i).getVoteAverage());
-                                item.setVoteCount(String.valueOf(response.body().getResults().get(i).getVoteCount()));
-                                item.setLang(response.body().getResults().get(i).getOriginalLanguage());
-                                myDataset.add(item);
-
-                            }
-
-                            page = response.body().getPage();
-                            totalPage = response.body().getTotalPages();
-                            mAdapter.notifyDataSetChanged();
-
-
-                        }
-
-                        @Override
-                        public void onFailure(Call<MovieList> call, Throwable t) {
-                            t.printStackTrace();
-                        }
-                    });
-                }else{
-                    Snackbar.make(view, "End of list!", Snackbar.LENGTH_LONG)
-                            .setAction("Action", null).show();
-                }
-
+                    presenter.getNewListView(query,page);
+//                }
             }
         };
 
         mRecyclerView.addOnScrollListener(scrollListener);
-        mAdapter = new MovieAdapter(getActivity(), myDataset, new CustomItemClickListener() {
-            @Override
-            public void onItemClick(View v, int position) {
-                Item item = myDataset.get(position);
 
-                Intent newIntent = new Intent(getActivity(), DetailActivity.class);
-                Log.d(TAG, item.getLang());
-                newIntent.putExtra("Title", item.getTitle());
-                newIntent.putExtra("Overview", item.getOverview());
-                newIntent.putExtra("PosterPath",item.getPoster_path());
-                newIntent.putExtra("ReleaseDate",item.getRelease_date());
-                newIntent.putExtra("VoteCount",item.getVoteCount());
-                newIntent.putExtra("Language",item.getLang());
-                startActivity(newIntent);
-            }
-        });
-        mRecyclerView.setAdapter(mAdapter);
 
         return v;
-    }
-
-    // TODO: Rename method, update argument and hook method into UI event
-    public void onButtonPressed(Uri uri) {
-        if (mListener != null) {
-            mListener.onFragmentInteraction(uri);
-        }
     }
 
     @Override
@@ -228,23 +146,74 @@ public class MovieFragment extends Fragment implements RecyclerView.OnItemTouchL
     }
 
     @Override
-    public boolean onInterceptTouchEvent(RecyclerView rv, MotionEvent e) {
-        return false;
+    public void displayListView(List<Item> myDataSet) {
+//        this.myDataset.clear();
+        this.myDataset = myDataSet;
+        mAdapter = new MovieAdapter(getActivity(), this.myDataset, this);
+        mRecyclerView.setAdapter(mAdapter);
     }
 
     @Override
-    public void onTouchEvent(RecyclerView rv, MotionEvent e) {
-
+    public void displayExtendedListView(List<Item> myDataset) {
+        this.myDataset.addAll(myDataset);
+        mAdapter.notifyDataSetChanged();
     }
 
     @Override
-    public void onRequestDisallowInterceptTouchEvent(boolean disallowIntercept) {
-
+    public void onItemClick(View v, int position) {
+        Item item = myDataset.get(position);
+        Intent newIntent = new Intent(getActivity(), DetailActivity.class);
+        newIntent.putExtras(createBundle(item));
+        startActivity(newIntent);
     }
 
+    public Bundle createBundle(Item item){
+        Bundle bundle = new Bundle();
+        bundle.putString("Title",item.getTitle());
+        bundle.putString("Overview", item.getOverview());
+        bundle.putString("PosterPath",item.getPoster_path());
+        bundle.putString("ReleaseDate",item.getRelease_date());
+        bundle.putString("VoteCount",item.getVoteCount());
+        bundle.putString("Language",item.getLang());
+        return bundle;
+    }
 
     public interface OnFragmentInteractionListener {
         // TODO: Update argument type and name
         void onFragmentInteraction(Uri uri);
     }
+
+    private final CompositeDisposable disposables = new CompositeDisposable();
+
+    void onRunSchedulerExampleButtonClicked() {
+        disposables.add(sampleObservable()
+                // Run on a background thread
+                .subscribeOn(Schedulers.io())
+                // Be notified on the main thread
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribeWith(new DisposableObserver<String>() {
+                    @Override public void onComplete() {
+                        Log.d(TAG, "onComplete()");
+                    }
+
+                    @Override public void onError(Throwable e) {
+                        Log.e(TAG, "onError()", e);
+                    }
+
+                    @Override public void onNext(String string) {
+                        Log.d(TAG, "onNext(" + string + ")");
+                    }
+                }));
+    }
+
+    static Observable<String> sampleObservable() {
+        return Observable.defer(new Callable<ObservableSource<? extends String>>() {
+            @Override public ObservableSource<? extends String> call() throws Exception {
+                // Do some long running operation
+                SystemClock.sleep(5000);
+                return Observable.just("one", "two", "three", "four", "five");
+            }
+        });
+    }
+
 }
