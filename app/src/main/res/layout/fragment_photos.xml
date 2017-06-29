@@ -2,7 +2,8 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".fragments.MovieFragment">
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    tools:context="app.saad.com.githubrepo.fragments.RepoListFragment">
 
     <EditText
         android:layout_width="match_parent"
@@ -13,7 +14,8 @@
         android:paddingLeft="10dp"
         android:lines="1"
         android:maxLines="1"
-        android:inputType="textPersonName"/>
+        android:inputType="textPersonName"
+        android:visibility="gone"/>
 
     <android.support.v7.widget.RecyclerView
         android:id="@+id/my_recycler_view"
@@ -23,6 +25,7 @@
         android:layout_below="@+id/edit_text"
         android:layout_above="@+id/button_submit"
         android:layout_margin="5dp"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
         />
 
     <Button
@@ -32,5 +35,5 @@
         android:layout_alignParentBottom="true"
         android:background="@android:drawable/bottom_bar"
         android:text="Submit"
-        android:visibility="visible"/>
+        android:visibility="gone"/>
 </RelativeLayout>

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">MovieDBSaad</string>
+    <string name="app_name">GithubListRepo</string>
 
     <string name="navigation_drawer_open">Open navigation drawer</string>
     <string name="navigation_drawer_close">Close navigation drawer</string>
@@ -7,7 +7,7 @@
     <string name="closeDrawer">close_drawer</string>
 
     <!-- Navigation Drawer menu labels -->
-    <string name="nav_photos">Movies</string>
+    <string name="nav_photos">Repo List</string>
 
     <!-- Toolbar titles when navigation menu item is selected -->
     <string-array name="nav_item_activity_titles">
